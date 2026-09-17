@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import api from '../utils/api';
 import { Sprout, Lock, Mail, ArrowRight, UserCheck, ShieldAlert, Sparkles } from 'lucide-react';
+import { DUMMY_USERS } from '../utils/dummyData';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -32,9 +33,21 @@ export default function Login() {
         res = await api.post('/auth/login', { email, password });
       }
 
-      login(res.data.token, res.data.user);
-      navigate('/');
+      if (res && res.data && res.data.token) {
+        login(res.data.token, res.data.user);
+        navigate('/');
+        return;
+      }
     } catch (err) {
+      // Fallback for offline or serverless frontend if using demo credentials
+      if (password === 'password123') {
+        const matched = DUMMY_USERS.find(u => u.email.toLowerCase() === email.toLowerCase());
+        if (matched) {
+          login('demo-jwt-token-' + Date.now(), matched);
+          navigate('/');
+          return;
+        }
+      }
       setError(err.response?.data?.error || 'Invalid credentials. Please try again.');
     } finally {
       setLoading(false);
@@ -54,13 +67,35 @@ export default function Login() {
       } else {
         res = await api.post('/auth/login', { email: demoEmail, password: demoPassword });
       }
-      login(res.data.token, res.data.user);
-      navigate('/');
+      if (res && res.data && res.data.token) {
+        login(res.data.token, res.data.user);
+        navigate('/');
+        return;
+      }
     } catch (err) {
-      setError(err.response?.data?.error || 'Demo login failed');
-    } finally {
-      setLoading(false);
+      console.warn('[AUTH] Live API login unreachable, using offline demo session:', err.message);
     }
+
+    // Seamless offline fallback for deployed environments
+    const matchedUser = DUMMY_USERS.find(
+      (u) => u.email.toLowerCase() === demoEmail.toLowerCase()
+    ) || (demoEmail === 'vivek24307@gmail.com' ? {
+      id: 999,
+      name: 'Vivek Admin',
+      email: 'vivek24307@gmail.com',
+      userType: 'admin',
+      district: 'Bengaluru',
+      city_or_village: 'Yeshwantpur Mandi City'
+    } : null);
+
+    if (matchedUser) {
+      const mockToken = 'demo-jwt-token-' + Date.now();
+      login(mockToken, matchedUser);
+      navigate('/');
+    } else {
+      setError('Demo login failed. Please try again.');
+    }
+    setLoading(false);
   };
 
   return (

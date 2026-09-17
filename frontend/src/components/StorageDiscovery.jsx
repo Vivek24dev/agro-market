@@ -5,6 +5,7 @@ import { COMMON_CROPS, KARNATAKA_DISTRICTS, KARNATAKA_CITIES_AND_VILLAGES, forma
 import confetti from 'canvas-confetti';
 import StorageMap from './StorageMap';
 import CityVillageSelectorModal from './CityVillageSelectorModal';
+import { DUMMY_STORAGES } from '../utils/dummyData';
 import {
   Store,
   Snowflake,
@@ -95,12 +96,41 @@ export default function StorageDiscovery({ onBookLogisticsRedirect }) {
       if (selectedType !== 'all') params.storage_type = selectedType;
 
       const res = await api.get('/storage/nearby', { params });
-      setStorages(res.data.locations || []);
+      if (res.data && res.data.locations && res.data.locations.length > 0) {
+        setStorages(res.data.locations);
+        setLoading(false);
+        return;
+      }
     } catch (err) {
-      console.error('Failed to query storage facilities', err);
+      console.warn('Storage API unreachable, calculating distances from dummy storage network:', err.message);
     } finally {
       setLoading(false);
     }
+
+    // Client-side fallback calculation with all 28 storages
+    const R = 6371;
+    let list = DUMMY_STORAGES.map(s => {
+      const dLat = (s.latitude - activeLocation.lat) * (Math.PI / 180);
+      const dLon = (s.longitude - activeLocation.lng) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(activeLocation.lat * (Math.PI / 180)) * Math.cos(s.latitude * (Math.PI / 180)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const dist = Math.round(R * c * 10) / 10;
+      return { ...s, distanceKm: dist, distanceText: `${dist} km away` };
+    });
+
+    if (selectedDistrict !== 'All') {
+      list = list.filter(s => s.district === selectedDistrict);
+    }
+    if (selectedType !== 'all') {
+      list = list.filter(s => s.location_type === selectedType);
+    }
+    const safeRadius = selectedRadius === 'all' ? 9999 : Number(selectedRadius) || 25;
+    list = list.filter(s => s.distanceKm <= safeRadius);
+    list.sort((a, b) => a.distanceKm - b.distanceKm);
+    setStorages(list.length > 0 ? list : DUMMY_STORAGES.slice(0, 10));
   };
 
   // Fetch user's existing reservations

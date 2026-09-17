@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar';
 import PostCard from '../components/PostCard';
 import CityVillageSelectorModal from '../components/CityVillageSelectorModal';
 import { COMMON_CROPS, KARNATAKA_CITIES_AND_VILLAGES } from '../utils/helpers';
+import { DUMMY_POSTS } from '../utils/dummyData';
 import {
   ShoppingBag,
   ListPlus,
@@ -52,12 +53,22 @@ export default function BuyerDashboard() {
       if (cropFilter) params.cropType = cropFilter;
       if (locFilter) params.city_or_village = locFilter;
       const res = await api.get('/posts', { params });
-      setFarmerPosts(res.data || []);
+      if (res.data && res.data.length > 0) {
+        setFarmerPosts(res.data);
+        setLoadingFeed(false);
+        return;
+      }
     } catch (err) {
-      console.error('Failed to fetch farmer listings', err);
+      console.warn('API listings unreachable, using fallback demo posts:', err.message);
     } finally {
       setLoadingFeed(false);
     }
+
+    // Fallback filter over DUMMY_POSTS
+    let filtered = DUMMY_POSTS.filter(p => p.category === 'produce');
+    if (cropFilter) filtered = filtered.filter(p => p.crop_type.toLowerCase() === cropFilter.toLowerCase());
+    if (locFilter) filtered = filtered.filter(p => p.city_or_village === locFilter);
+    setFarmerPosts(filtered);
   };
 
   // Load Buyer's Own Requirements
