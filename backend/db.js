@@ -1,13 +1,15 @@
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const bcrypt = require('bcryptjs');
 
 let pgPool = null;
 let usePg = false;
 
-// Path for embedded fallback database
-const DATA_DIR = path.join(__dirname, 'data');
+// Path for embedded fallback database (uses /tmp on Vercel/serverless where /var/task is read-only)
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const DATA_DIR = isServerless ? path.join(os.tmpdir(), 'agro-data') : path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'database.json');
 
 // Initial seed data for embedded engine
@@ -1451,13 +1453,25 @@ const INITIAL_STORAGE_BOOKINGS = [
 let embeddedDb = null;
 
 function loadEmbeddedDb() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (e) {
+    // Read-only filesystem on serverless
   }
 
+  const bundledFile = path.join(__dirname, 'data', 'database.json');
+  let sourceFile = null;
   if (fs.existsSync(DB_FILE)) {
+    sourceFile = DB_FILE;
+  } else if (fs.existsSync(bundledFile)) {
+    sourceFile = bundledFile;
+  }
+
+  if (sourceFile) {
     try {
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      const data = JSON.parse(fs.readFileSync(sourceFile, 'utf-8'));
       // Ensure new tables and expanded storages are seeded
       let modified = false;
       if (!data.logistics_carriers || data.logistics_carriers.length === 0) {
@@ -1494,8 +1508,9 @@ function loadEmbeddedDb() {
           return u;
         });
       }
+      embeddedDb = data;
       if (modified) {
-        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+        saveEmbeddedDb();
       }
       return data;
     } catch (e) {
@@ -1516,16 +1531,21 @@ function loadEmbeddedDb() {
     storage_bookings: INITIAL_STORAGE_BOOKINGS
   };
 
-  fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), 'utf-8');
+  embeddedDb = initialDb;
+  saveEmbeddedDb();
   return initialDb;
 }
 
 function saveEmbeddedDb() {
   if (embeddedDb) {
     try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
       fs.writeFileSync(DB_FILE, JSON.stringify(embeddedDb, null, 2), 'utf-8');
     } catch (err) {
-      console.error('[DB] Failed to persist database.json:', err.message);
+      // In read-only serverless environments, state continues in memory
+      console.warn('[DB] Could not persist to disk, continuing in-memory:', err.message);
     }
   }
 }

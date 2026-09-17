@@ -24,5 +24,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Uploads & temporary files
-uploads/
+uploads/*
+!uploads/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
 scratch/

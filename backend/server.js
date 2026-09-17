@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const os = require('os');
 const cron = require('node-cron');
 const db = require('./db');
 
@@ -30,6 +31,12 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Static uploads serving
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+try {
+  const tmpUploads = path.join(os.tmpdir(), 'uploads');
+  app.use('/uploads', express.static(tmpUploads));
+} catch (e) {
+  // Ignore
+}
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -45,27 +52,29 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/logistics', logisticsRoutes);
 app.use('/api/storage', storageRoutes);
 
-// Cron Job: Simulate mandi market fluctuations every 6 hours
-cron.schedule('0 */6 * * *', async () => {
-  console.log('[CRON] Simulating mandi market fluctuations...');
-  try {
-    const pricesResult = await db.query('SELECT id, price, min_price, max_price FROM mandi_prices');
-    for (const item of pricesResult.rows) {
-      // Random delta between -3% and +3%
-      const factor = 1 + (Math.random() * 0.06 - 0.03);
-      const newPrice = Math.round(Number(item.price) * factor * 10) / 10;
-      const minPrice = Math.round(newPrice * 0.82 * 10) / 10;
-      const maxPrice = Math.round(newPrice * 1.18 * 10) / 10;
-      await db.query(
-        'UPDATE mandi_prices SET price = $1, min_price = $2, max_price = $3, updated_at = NOW() WHERE id = $4',
-        [newPrice, minPrice, maxPrice, item.id]
-      );
+// Cron Job: Simulate mandi market fluctuations every 6 hours (only in persistent server mode)
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  cron.schedule('0 */6 * * *', async () => {
+    console.log('[CRON] Simulating mandi market fluctuations...');
+    try {
+      const pricesResult = await db.query('SELECT id, price, min_price, max_price FROM mandi_prices');
+      for (const item of pricesResult.rows) {
+        // Random delta between -3% and +3%
+        const factor = 1 + (Math.random() * 0.06 - 0.03);
+        const newPrice = Math.round(Number(item.price) * factor * 10) / 10;
+        const minPrice = Math.round(newPrice * 0.82 * 10) / 10;
+        const maxPrice = Math.round(newPrice * 1.18 * 10) / 10;
+        await db.query(
+          'UPDATE mandi_prices SET price = $1, min_price = $2, max_price = $3, updated_at = NOW() WHERE id = $4',
+          [newPrice, minPrice, maxPrice, item.id]
+        );
+      }
+      console.log('[CRON] Mandi market prices updated successfully.');
+    } catch (err) {
+      console.error('[CRON] Error during price update:', err.message);
     }
-    console.log('[CRON] Mandi market prices updated successfully.');
-  } catch (err) {
-    console.error('[CRON] Error during price update:', err.message);
-  }
-});
+  });
+}
 
 // Global 404 handler
 app.use((req, res) => {
@@ -84,16 +93,20 @@ app.use((err, req, res, next) => {
 async function startServer() {
   try {
     await db.initDb();
-    app.listen(PORT, () => {
-      console.log(`=============================================`);
-      console.log(`🌾 SIH Agri-Marketplace Backend API running`);
-      console.log(`🌐 Base URL: http://localhost:${PORT}/api`);
-      console.log(`🚀 Ready for Farmer, Buyer, and Admin clients`);
-      console.log(`=============================================`);
-    });
+    if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      app.listen(PORT, () => {
+        console.log(`=============================================`);
+        console.log(`🌾 SIH Agri-Marketplace Backend API running`);
+        console.log(`🌐 Base URL: http://localhost:${PORT}/api`);
+        console.log(`🚀 Ready for Farmer, Buyer, and Admin clients`);
+        console.log(`=============================================`);
+      });
+    }
   } catch (err) {
     console.error('Failed to start server:', err);
-    process.exit(1);
+    if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      process.exit(1);
+    }
   }
 }
 
