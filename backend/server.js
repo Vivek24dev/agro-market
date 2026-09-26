@@ -43,6 +43,11 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Base API route
+app.get('/api', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Agri-Marketplace API is running' });
+});
+
 // Mount modular API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/posts', postsRoutes);
